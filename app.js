@@ -17,13 +17,16 @@ const DEMO = {
   busy:false,
   view:'code'
 };
-
 const enc = new TextEncoder();
 const cache = new Map();
 
-function currentDemoWindow(){ return Math.floor(Date.now()/DEMO.demoWindowMs); }
+function currentDemoWindow(){
+  return currentProductionWindow();
+}
 function currentProductionWindow(){ return Math.floor(Date.now()/DEMO.productionWindowMs); }
-function expiryMs(){ return (currentProductionWindow()+DEMO.acceptedWindows)*DEMO.productionWindowMs; }
+function expiryMs() {
+  return (currentProductionWindow() + 1) * DEMO.productionWindowMs;
+}
 
 function fmtTime(ms){
   return new Date(ms).toLocaleTimeString([], {hour:'2-digit',minute:'2-digit'});
@@ -122,8 +125,9 @@ async function tick(){
   DEMO.currentCode=code;
   $('#buyerCode').textContent=code;
 
-  const remaining=DEMO.demoWindowMs-(Date.now()%DEMO.demoWindowMs);
-  $('#timerFill').style.width=(remaining/DEMO.demoWindowMs*100)+'%';
+  const remaining = DEMO.productionWindowMs - (Date.now() % DEMO.productionWindowMs);
+  $('#timerFill').style.width =
+  (remaining / DEMO.productionWindowMs * 100) + '%';
 
   updateExpiryUi();
   if(lastRenderedCode!==code){
@@ -179,16 +183,25 @@ $('#scanQrBtn').addEventListener('click',async()=>{
   receipt('QR scanned','Payer ID and authorization code filled automatically.','pending');
   log(`merchant · QR scanned → payer ${DEMO.alias}, code ${code}`,'dim');
 });
-
-async function verify(alias,code,count){
-  if(alias!==DEMO.alias) return {ok:false,reason:'unknown payer ID'};
-  if(DEMO.spent.has(`${alias}:${code}`)) return {ok:false,reason:'code already used'};
-  const now=currentDemoWindow();
-  for(let i=0;i<count;i++){
-    if(await codeForWindow(now-i)===code) return {ok:true};
+async function verify(alias, code, count) {
+  if (alias !== DEMO.alias) {
+    return { ok: false, reason: 'unknown payer ID' };
   }
-  return {ok:false,reason:'code expired or invalid'};
+
+  if (DEMO.spent.has(`${alias}:${code}`)) {
+    return { ok: false, reason: 'code already used' };
+  }
+
+  const now = currentProductionWindow();
+  const expectedCode = await codeForWindow(now);
+
+  if (expectedCode !== code) {
+    return { ok: false, reason: 'code expired or invalid' };
+  }
+
+  return { ok: true, window: now };
 }
+
 
 function updateGrant(){
   const pct=Math.min(100,DEMO.monthSpent/DEMO.monthCap*100);
@@ -211,10 +224,36 @@ async function redeem(){
   log(`POST /redeem { payer:${alias}, code:${code}, amount:R${amount.toFixed(2)} }`);
   await sleep(280);
 
-  const v=await verify(alias,code,DEMO.acceptedWindows);
-  if(!v.ok){log(`reject · ${v.reason}`,'bad');receipt('Payment rejected',v.reason,'bad');finish();return}
-  log('auth · payer located, code matches an accepted time window','ok');
-  await sleep(220);
+  let response;
+let v;
+
+try {
+  response = await fetch('http://127.0.0.1:3000/verify', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ payerId: alias, code })
+  });
+
+  v = await response.json();
+} catch (error) {
+  console.error('Verification request failed:', error);
+  log(`verification error · ${error.message}`, 'bad');
+  receipt('Verification failed', error.message, 'bad');
+
+  DEMO.busy = false;
+  $('#redeemBtn').disabled = false;
+  $('#replayBtn').disabled = false;
+  return;
+}
+if (!v.valid) {
+  log(`reject · ${v.reason}`, 'bad');
+  receipt('Payment rejected', v.reason || 'Code expired or invalid', 'bad');
+  finish();
+  return;
+}
+
+log('auth · payer located, code matches an accepted time window', 'ok');
+await sleep(220);
 
   if(amount<=0 || amount>DEMO.txCap){
     log(`policy · amount exceeds R${DEMO.txCap} code limit`,'bad');
