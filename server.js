@@ -37,6 +37,48 @@ db.exec(`
   )
 `);
 
+db.exec(`
+  CREATE TABLE IF NOT EXISTS payment_records (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    user_id INTEGER NOT NULL,
+    payer_id TEXT NOT NULL,
+    code TEXT NOT NULL,
+    amount REAL NOT NULL,
+    merchant_wallet TEXT NOT NULL,
+    status TEXT NOT NULL DEFAULT 'approved',
+    created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    UNIQUE (payer_id, code),
+    FOREIGN KEY (user_id) REFERENCES users(id)
+  )
+`);
+
+const findUsedPaymentCode = db.prepare(`
+  SELECT id
+  FROM payment_records
+  WHERE payer_id = ? AND code = ?
+`);
+
+const recordPayment = db.prepare(`
+  INSERT INTO payment_records (
+    user_id,
+    payer_id,
+    code,
+    amount,
+    merchant_wallet,
+    status
+  )
+  VALUES (?, ?, ?, ?, ?, ?)
+`);
+
+const getMonthlySpending = db.prepare(`
+  SELECT COALESCE(SUM(amount), 0) AS total
+  FROM payment_records
+  WHERE user_id = ?
+    AND status = 'approved'
+    AND created_at >= datetime('now', 'start of month')
+`);
+
+
 const createUser = db.prepare(`
   INSERT INTO users (name, email, password_hash)
   VALUES (?, ?, ?)
@@ -268,7 +310,7 @@ app.get('/health', (req, res) => {
   });
 });
 
-app.get('/current-code', (req, res) => {
+app.get('/current-code', requireLogin, (req, res) => {
   const windowNumber = currentWindow();
 
   res.json({
@@ -280,7 +322,7 @@ app.get('/current-code', (req, res) => {
   });
 });
 
-app.post('/verify', (req, res) => {
+app.post('/verify', requireLogin, (req, res) => {
   const { payerId, code } = req.body || {};
 
   if (payerId !== PAYER_ID) {
@@ -321,6 +363,76 @@ app.post('/verify', (req, res) => {
     message: 'Code verified successfully'
   });
 });
+
+app.post('/api/payments', requireLogin, (req, res) => {
+  const payerId = req.body?.payerId;
+  const code = req.body?.code;
+  const amount = Number(req.body?.amount);
+  const wallet = req.body?.wallet;
+
+  if (payerId !== PAYER_ID) {
+    return res.status(400).json({ error: 'Unknown payer ID.' });
+  }
+
+  if (typeof code !== 'string' || !/^\d{6}$/.test(code)) {
+    return res.status(400).json({ error: 'Invalid authorization code.' });
+  }
+
+  if (!Number.isFinite(amount) || amount <= 0 || amount > 50) {
+    return res.status(400).json({
+      error: 'Amount must be greater than R0 and no more than R50.'
+    });
+  }
+
+  if (typeof wallet !== 'string' || wallet.trim().length === 0) {
+    return res.status(400).json({ error: 'Merchant wallet is required.' });
+  }
+
+  const expected = codeForWindow(currentWindow());
+
+  if (code !== expected) {
+    return res.status(401).json({
+      error: 'Authorization code expired or invalid.'
+    });
+  }
+
+  const userId = req.session.userId;
+  const monthly = getMonthlySpending.get(userId);
+  const spent = Number(monthly.total);
+
+  if (spent + amount > 500) {
+    return res.status(400).json({
+      error: 'The R500 monthly spending limit would be exceeded.'
+    });
+  }
+
+  try {
+    recordPayment.run(
+      userId,
+      payerId,
+      code,
+      amount,
+      wallet.trim(),
+      'approved'
+    );
+  } catch (error) {
+    if (error.code === 'SQLITE_CONSTRAINT_UNIQUE') {
+      return res.status(409).json({
+        error: 'This authorization code has already been used.'
+      });
+    }
+
+    throw error;
+  }
+
+  return res.json({
+    approved: true,
+    message: 'Demo payment record created.',
+    amount,
+    monthlySpent: spent + amount
+  });
+});
+
 
 // Return safe error messages to the browser
 app.use((error, req, res, next) => {

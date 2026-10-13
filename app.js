@@ -224,36 +224,48 @@ async function redeem(){
   log(`POST /redeem { payer:${alias}, code:${code}, amount:R${amount.toFixed(2)} }`);
   await sleep(280);
 
-  let response;
-let v;
+ 
+  let paymentResponse;
+  let paymentResult;
 
-try {
-  response = await fetch('http://127.0.0.1:3000/verify', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ payerId: alias, code })
-  });
+  try {
+    paymentResponse = await fetch('/api/payments', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      credentials: 'same-origin',
+      body: JSON.stringify({
+        payerId: alias,
+        code,
+        amount,
+        wallet
+      })
+    });
 
-  v = await response.json();
-} catch (error) {
-  console.error('Verification request failed:', error);
-  log(`verification error · ${error.message}`, 'bad');
-  receipt('Verification failed', error.message, 'bad');
+    paymentResult = await paymentResponse.json();
+  } catch (error) {
+    console.error('Payment request failed:', error);
+    log(`payment error · ${error.message}`, 'bad');
+    receipt('Payment request failed', 'Could not contact the server.', 'bad');
+    finish();
+    return;
+  }
 
-  DEMO.busy = false;
-  $('#redeemBtn').disabled = false;
-  $('#replayBtn').disabled = false;
-  return;
-}
-if (!v.valid) {
-  log(`reject · ${v.reason}`, 'bad');
-  receipt('Payment rejected', v.reason || 'Code expired or invalid', 'bad');
-  finish();
-  return;
-}
+  if (!paymentResponse.ok) {
+    const message = paymentResult.error || paymentResult.reason || 'Payment rejected.';
+    log(`reject · ${message}`, 'bad');
+    receipt(
+      paymentResponse.status === 401 ? 'Login required' : 'Payment rejected',
+      message,
+      'bad'
+    );
+    finish();
+    return;
+  }
 
-log('auth · payer located, code matches an accepted time window', 'ok');
-await sleep(220);
+  DEMO.monthSpent = paymentResult.monthlySpent;
+  DEMO.spent.add(`${alias}:${code}`);
+  updateGrant();
+
 
   if(amount<=0 || amount>DEMO.txCap){
     log(`policy · amount exceeds R${DEMO.txCap} code limit`,'bad');
@@ -273,22 +285,16 @@ await sleep(220);
     finish();return;
   }
 
-  DEMO.spent.add(`${alias}:${code}`);
-  log('replay guard · authorization claimed once','ok');
-  await sleep(220);
-  log(`Open Payments · create incoming payment for ${wallet}`,'op');
-  await sleep(260);
-  log('Open Payments · create quote','op');
-  await sleep(260);
-  log('Open Payments · create outgoing payment using existing grant','op');
-  await sleep(380);
+ 
+DEMO.lastSuccess = { alias, code, amount, wallet };
 
-  DEMO.monthSpent+=amount;
-  DEMO.lastSuccess={alias,code,amount,wallet};
-  updateGrant();
-  log('complete · payment executed','ok');
-  receipt('Payment approved',`R${amount.toFixed(2)} sent to ${wallet}`,'ok');
-  finish(true);
+log('complete · demo payment record saved on server', 'ok');
+receipt(
+  'Demo payment recorded',
+  `R${amount.toFixed(2)} recorded for ${wallet}. No real money was transferred.`,
+  'ok'
+);
+finish(true);
 
   function finish(success=false){
     DEMO.busy=false;
