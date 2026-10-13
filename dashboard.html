@@ -1,0 +1,147 @@
+
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="theme-color" content="#101a2c">
+  <title>Dashboard | Atomic Commits</title>
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <header class="site-header">
+    <a class="brand" href="index.html">
+      <span class="brand-icon">A</span>
+      <span>Atomic Commits</span>
+    </a>
+
+    <button class="secondary-button" id="logoutButton" type="button">
+      Log out ↗
+    </button>
+  </header>
+
+  <main class="dashboard-main">
+    <section class="dashboard-welcome">
+      <span class="eyebrow">YOUR PERSONAL SPACE</span>
+      <h1 id="welcome">Welcome to Atomic Commits</h1>
+      <p>Your account overview and quick access to the platform.</p>
+    </section>
+
+    <section class="dashboard-grid" aria-label="Account overview">
+      <article class="dashboard-card">
+        <span class="feature-icon">◎</span>
+        <h3>My account</h3>
+        <p>Your account is connected to Atomic Commits.</p>
+        <strong id="accountStatus">Checking status...</strong>
+      </article>
+
+      <article class="dashboard-card">
+        <span class="feature-icon">↔</span>
+        <h3>Payment verification</h3>
+        <p>Explore the existing payment-code verification demo.</p>
+        <a href="index.html">Open payment demo →</a>
+      </article>
+
+      <article class="dashboard-card">
+        <span class="feature-icon">✓</span>
+        <h3>Account security</h3>
+        <p>Your password is stored as a hash, and your login uses a session.</p>
+        <strong>Session active</strong>
+      </article>
+    </section>
+
+    <section class="dashboard-card" style="margin-top: 24px;">
+      <h3>Account details</h3>
+      <p><strong>Name:</strong> <span id="accountName">Loading...</span></p>
+      <p><strong>Email:</strong> <span id="accountEmail">Loading...</span></p>
+
+      <div class="dashboard-actions">
+        <span id="pageMessage" class="message" role="status" aria-live="polite"></span>
+        <button class="secondary-button" id="logoutButtonBottom" type="button">
+          Log out of account
+        </button>
+      </div>
+    </section>
+
+    <footer class="site-footer">
+      © 2026 Atomic Commits · Account dashboard
+    </footer>
+  </main>
+
+  <script>
+    const welcome = document.getElementById('welcome');
+    const accountName = document.getElementById('accountName');
+    const accountEmail = document.getElementById('accountEmail');
+    const accountStatus = document.getElementById('accountStatus');
+    const pageMessage = document.getElementById('pageMessage');
+    const logoutButtons = [
+      document.getElementById('logoutButton'),
+      document.getElementById('logoutButtonBottom')
+    ];
+
+    async function loadAccount() {
+      try {
+        const response = await fetch('/api/auth/me');
+
+        if (response.status === 401) {
+          window.location.replace('login.html');
+          return;
+        }
+
+        if (!response.ok) {
+          throw new Error('Could not load account');
+        }
+
+        const result = await response.json();
+        const user = result.user;
+
+        welcome.textContent = `Welcome, ${user.name}!`;
+        accountName.textContent = user.name;
+        accountEmail.textContent = user.email;
+        accountStatus.textContent = 'Connected';
+      } catch (error) {
+        accountStatus.textContent = 'Unavailable';
+        pageMessage.textContent =
+          'Unable to load your account. Check that the server is running.';
+        pageMessage.className = 'message error';
+      }
+    }
+
+    async function logout() {
+      logoutButtons.forEach(button => {
+        button.disabled = true;
+        button.textContent = 'Logging out...';
+      });
+
+      try {
+        const response = await fetch('/api/auth/logout', {
+          method: 'POST'
+        });
+
+        if (response.ok) {
+          window.location.replace('login.html');
+          return;
+        }
+
+        pageMessage.textContent = 'Logout failed. Please try again.';
+        pageMessage.className = 'message error';
+      } catch (error) {
+        pageMessage.textContent =
+          'Unable to connect to the server. Please try again.';
+        pageMessage.className = 'message error';
+      } finally {
+        logoutButtons.forEach(button => {
+          button.disabled = false;
+          button.textContent = 'Log out';
+        });
+      }
+    }
+
+    logoutButtons.forEach(button => {
+      button.addEventListener('click', logout);
+    });
+
+    loadAccount();
+  </script>
+</body>
+</html>

@@ -1,0 +1,142 @@
+
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="theme-color" content="#101a2c">
+  <title>Log In | Atomic Commits</title>
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <header class="site-header">
+    <a class="brand" href="index.html">
+      <span class="brand-icon">A</span>
+      <span>Atomic Commits</span>
+    </a>
+    <span class="header-note">Secure payments. Simple experience.</span>
+  </header>
+
+  <main class="page-layout">
+    <section class="intro-panel">
+      <span class="eyebrow">● Welcome back</span>
+      <h1>Your account. Your dashboard.</h1>
+      <p>Sign in to continue to your Atomic Commits account and access your personal dashboard.</p>
+
+      <div class="feature-list">
+        <div class="feature">
+          <span class="feature-icon">✓</span>
+          <span>Access your personal dashboard</span>
+        </div>
+        <div class="feature">
+          <span class="feature-icon">✓</span>
+          <span>Session-based account access</span>
+        </div>
+        <div class="feature">
+          <span class="feature-icon">✓</span>
+          <span>A simple and consistent experience</span>
+        </div>
+      </div>
+    </section>
+
+    <section class="form-panel">
+      <div class="form-card">
+        <span class="eyebrow">Your account</span>
+        <h2>Welcome back</h2>
+        <p class="form-description">Enter your details to sign in.</p>
+
+        <form id="loginForm">
+          <div class="form-group">
+            <label for="email">Email address</label>
+            <input
+              type="email"
+              id="email"
+              name="email"
+              placeholder="you@example.com"
+              autocomplete="email"
+              maxlength="254"
+              required
+            >
+          </div>
+
+          <div class="form-group">
+            <label for="password">Password</label>
+            <input
+              type="password"
+              id="password"
+              name="password"
+              placeholder="Enter your password"
+              autocomplete="current-password"
+              required
+            >
+          </div>
+
+          <button class="primary-button" id="loginButton" type="submit">
+            Log in →
+          </button>
+
+          <p id="message" class="message" role="status" aria-live="polite"></p>
+        </form>
+
+        <p class="form-footer">
+          Don't have an account?
+          <a href="register.html">Create one</a>
+        </p>
+      </div>
+    </section>
+  </main>
+
+  <footer class="site-footer">
+    © 2026 Atomic Commits · Account login
+  </footer>
+
+  <script>
+    const form = document.getElementById('loginForm');
+    const message = document.getElementById('message');
+    const button = document.getElementById('loginButton');
+
+    form.addEventListener('submit', async (event) => {
+      event.preventDefault();
+
+      message.textContent = '';
+      message.className = 'message';
+      button.disabled = true;
+      button.textContent = 'Signing in...';
+
+      const data = {
+        email: form.email.value.trim(),
+        password: form.password.value
+      };
+
+      try {
+        const response = await fetch('/api/auth/login', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json'
+          },
+          body: JSON.stringify(data)
+        });
+
+        const result = await response.json();
+
+        if (!response.ok) {
+          message.textContent = result.error || 'Login failed.';
+          message.classList.add('error');
+          return;
+        }
+
+        message.textContent = 'Login successful! Opening your dashboard...';
+        message.classList.add('success');
+
+        window.location.href = 'dashboard.html';
+      } catch (error) {
+        message.textContent = 'Unable to connect. Check that the server is running.';
+        message.classList.add('error');
+      } finally {
+        button.disabled = false;
+        button.textContent = 'Log in →';
+      }
+    });
+  </script>
+</body>
+</html>
